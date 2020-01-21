@@ -30,6 +30,7 @@ use OCA\DAV\CalDAV\Activity\Provider\Event;
 use OCA\DAV\CalDAV\CalDavBackend;
 use OCP\Activity\IEvent;
 use OCP\Activity\IManager as IActivityManager;
+use OCP\App\IAppManager;
 use OCP\IGroup;
 use OCP\IGroupManager;
 use OCP\IUser;
@@ -52,16 +53,8 @@ class Backend {
 	/** @var IUserSession */
 	protected $userSession;
 
-	/**
-	 * @param IActivityManager $activityManager
-	 * @param IGroupManager $groupManager
-	 * @param IUserSession $userSession
-	 */
-	public function __construct(IActivityManager $activityManager, IGroupManager $groupManager, IUserSession $userSession) {
-		$this->activityManager = $activityManager;
-		$this->groupManager = $groupManager;
-		$this->userSession = $userSession;
-	}
+	/** @var IAppManager */
+	protected $appManager;
 
 	/**
 	 * Creates activities when a calendar was creates
@@ -81,6 +74,19 @@ class Backend {
 	 */
 	public function onCalendarUpdate(array $calendarData, array $shares, array $properties) {
 		$this->triggerCalendarActivity(Calendar::SUBJECT_UPDATE, $calendarData, $shares, $properties);
+	}
+
+	/**
+	 * @param IActivityManager $activityManager
+	 * @param IGroupManager $groupManager
+	 * @param IUserSession $userSession
+	 * @param IAppManager $appManager
+	 */
+	public function __construct(IActivityManager $activityManager, IGroupManager $groupManager, IUserSession $userSession, IAppManager $appManager) {
+		$this->activityManager = $activityManager;
+		$this->groupManager = $groupManager;
+		$this->userSession = $userSession;
+		$this->appManager = $appManager;
 	}
 
 	/**
@@ -441,23 +447,39 @@ class Backend {
 				continue;
 			}
 
+			$params = [
+				'actor' => $event->getAuthor(),
+				'calendar' => [
+					'id' => (int) $calendarData['id'],
+					'uri' => $calendarData['uri'],
+					'name' => $calendarData['{DAV:}displayname'],
+				],
+				'object' => [
+					'id' => $object['id'],
+					'name' => $classification === CalDavBackend::CLASSIFICATION_CONFIDENTIAL && $user !== $owner ? 'Busy' : $object['name'],
+					'classified' => $classification === CalDavBackend::CLASSIFICATION_CONFIDENTIAL && $user !== $owner,
+				],
+			];
+
+			if ($object['type'] === 'event' && strpos($action, Event::SUBJECT_OBJECT_DELETE) === false && $this->appManager->isEnabledForUser('calendar')) {
+				$objectId = base64_encode('/remote.php/dav/calendars/' . $owner . '/' . $calendarData['uri'] . '/' . $objectData['uri']);
+				$timeRange = (new \DateTime())->setTimestamp($objectData['firstoccurence']);
+				$params['object']['link'] = [
+					'view' => 'dayGridMonth',
+					'timeRange' => $timeRange->format('Y-m-d'),
+					'mode' => 'sidebar',
+					'objectId' => $objectId,
+					'recurrenceId' => $objectData['firstoccurence']
+				];
+			}
+
+
 			$event->setAffectedUser($user)
 				->setSubject(
 					$user === $currentUser ? $action . '_self' : $action,
-					[
-						'actor' => $event->getAuthor(),
-						'calendar' => [
-							'id' => (int) $calendarData['id'],
-							'uri' => $calendarData['uri'],
-							'name' => $calendarData['{DAV:}displayname'],
-						],
-						'object' => [
-							'id' => $object['id'],
-							'name' => $classification === CalDavBackend::CLASSIFICATION_CONFIDENTIAL && $user !== $owner ? 'Busy' : $object['name'],
-							'classified' => $classification === CalDavBackend::CLASSIFICATION_CONFIDENTIAL && $user !== $owner,
-						],
-					]
+					$params
 				);
+
 			$this->activityManager->publish($event);
 		}
 	}

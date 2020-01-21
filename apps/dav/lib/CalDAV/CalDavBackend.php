@@ -953,7 +953,7 @@ class CalDavBackend extends AbstractBackend implements SyncSupport, Subscription
 	 */
 	public function getCalendarObject($id, $objectUri, $calendarType=self::CALENDAR_TYPE_CALENDAR) {
 		$query = $this->db->getQueryBuilder();
-		$query->select(['id', 'uri', 'lastmodified', 'etag', 'calendarid', 'size', 'calendardata', 'componenttype', 'classification'])
+		$query->select(['id', 'uri', 'lastmodified', 'etag', 'calendarid', 'size', 'calendardata', 'componenttype', 'firstoccurence', 'classification'])
 			->from('calendarobjects')
 			->where($query->expr()->eq('calendarid', $query->createNamedParameter($id)))
 			->andWhere($query->expr()->eq('uri', $query->createNamedParameter($objectUri)))
@@ -974,6 +974,7 @@ class CalDavBackend extends AbstractBackend implements SyncSupport, Subscription
 			'size'          => (int)$row['size'],
 			'calendardata'  => $this->readBlob($row['calendardata']),
 			'component'     => strtolower($row['componenttype']),
+			'firstoccurence'=> (int)$row['firstoccurence'],
 			'classification'=> (int)$row['classification']
 		];
 	}
